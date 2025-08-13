@@ -131,6 +131,7 @@ def load_config(path: Path) -> ScraperConfig:
 
 
 NAME_HINTS = [
+    ".a-designation__label",
     "[data-test-id='product-tile-title']",
     "[data-test-id='product-title']",
     "[data-testid='product-card-listings-title']",
@@ -142,6 +143,8 @@ NAME_HINTS = [
     "a[title]",
 ]
 PRICE_HINTS = [
+    ".m-price.-main .m-price__line",
+    ".m-price:not(.-crossed) .m-price__line",
     "[data-test-id='price']",
     "[data-testid='price-main']",
     "[data-testid='price-main'] [itemprop='price']",  
@@ -153,6 +156,7 @@ PRICE_HINTS = [
 ]
 
 BRAND_HINTS = [
+    ".a-vendor__name",
     "[data-test-id='brand']",
     "[data-test-id='manufacturer']",
     ".product-brand",
@@ -161,6 +165,7 @@ BRAND_HINTS = [
 ]
 
 UNIT_HINTS = [
+    ".m-price.-secondary .m-price__unit",
     "[data-testid='product-card-listings-title']",
     "[data-test-id*='unit']",
     "[data-test-id*='pack']",
@@ -171,6 +176,8 @@ UNIT_HINTS = [
     ".size",
 ]
 IMAGE_HINTS = [
+    ".a-illustration__img",
+    "picture source",
     "[data-testid='image']",  
     "img[src]",
     "img[data-srcset]",
@@ -182,6 +189,7 @@ IMAGE_HINTS = [
     "img[data-original]",
 ]
 LINK_HINTS = [
+    ".a-designation[href]",
     "a[href*='/p/']",
     "a[href*='-pr']",
     "a[href]",
@@ -308,7 +316,86 @@ def extract_from_card(card, category_name: str, supplier: str, base_url: str) ->
                 "timestamp": now_ts(),
                 "error": str(e)
             }
-    
+    elif supplier == "Leroy Merlin":
+        try:
+            name = first_text(card, [".a-designation__label", ".a-designation"])
+            if not name:
+                name_link = card.locator(".a-designation[title]").first
+                if name_link:
+                    name = name_link.get_attribute("title") or ""
+            href = first_attr(card, [".a-designation"], "href")
+            product_url = resolve_url(href, base_url)
+            
+            price_text = first_text(card, [".m-price.-main .m-price__line", ".m-price:not(.-crossed) .m-price__line"])
+            if not price_text:
+                price_text = first_text(card, [".o-thumbnailPrice .m-price.-main"])
+            currency, price = parse_price_with_currency(price_text)
+
+            brand = first_text(card, [".a-vendor__name"])
+
+            unit = ""
+            unit_text = first_text(card, [".m-price.-secondary .m-price__unit", ".m-price__unit"])
+            if unit_text:
+                unit_match = re.search(r'/\s+(\w+)', unit_text)
+                if unit_match:
+                   unit = unit_match.group(1)
+            
+            image_url = ""
+            img = card.locator(".a-illustration__img").first
+            if img:
+                image_url = img.get_attribute("src") or ""
+            
+            if not image_url:
+                # Look for the highest resolution image in picture sources
+                sources = card.locator("picture source")
+                highest_width = 0
+                for i in range(sources.count()):
+                    source = sources.nth(i)
+                    srcset = source.get_attribute("srcset") or ""
+                    media = source.get_attribute("media") or ""
+                    
+                    # Try to extract width from media query
+                    width_match = re.search(r'width=(\d+)', srcset)
+                    if width_match:
+                        width = int(width_match.group(1))
+                        if width > highest_width:
+                            highest_width = width
+                            image_url = re.sub(r'\?.*$', '', srcset) 
+            if not image_url:
+                image_url = first_attr(card, ["img[src]"], "src")
+            
+            print(f"Leroy Merlin extraction: name={name}, price={price}, image_url={image_url}")
+
+            return {
+                "supplier": supplier,
+                "category": category_name,
+                "name": name,
+                "price": price,
+                "currency": currency,
+                "url": product_url,
+                "brand": brand,
+                "unit": unit,
+                "image_url": image_url,
+                "timestamp": now_ts(),
+            }
+        except Exception as e:
+            import traceback
+            print(f"Error extracting Leroy Merlin card: {e}")
+            traceback.print_exc()
+            return {
+                "supplier": supplier,
+                "category": category_name,
+                "name": "Error extracting product",
+                "price": 0,
+                "currency": "€",
+                "url": base_url,  
+                "brand": "",
+                "unit": "",
+                "image_url": "",
+                "timestamp": now_ts(),
+                "error": str(e)
+            }
+
     name = first_text(card, NAME_HINTS)
     price_text = first_text(card, PRICE_HINTS)
     currency, price = parse_price_with_currency(price_text)
@@ -417,51 +504,179 @@ def do_infinite_scroll(page: Page, steps: int, wait_ms: int):
         page.wait_for_timeout(max(100, wait_ms))
 
 def scrape_category(page: Page, cat: CategoryConfig, supplier: SupplierConfig, target_min: int) -> List[Dict[str, Any]]:
-    page.goto(cat.url, wait_until="domcontentloaded")
+    """Scrape a single category page, handling pagination and collecting items."""
+    url = cat.url
+    print(f"Scraping {supplier.supplier}/{cat.name} from {url}")
+    
+    # Navigate to the category page
+    page.goto(url, wait_until="domcontentloaded")
     page.wait_for_timeout(1000)  # give JS time to start
-
+    
+    # Handle site-specific cookie consents and initial setup
+    if supplier.supplier == "Leroy Merlin":
+        try:
+            # Wait a bit longer for Leroy Merlin's page to fully load
+            page.wait_for_load_state("networkidle", timeout=10000)
+            
+            # Handle cookie consent dialog - with proper escaping
+            for selector in [
+                "#didomi-notice-agree-button",
+                'button:has-text("Accepter")',
+                'button:has-text("Accept all")',
+                'button:has-text("J\'accepte")'
+            ]:
+                try:
+                    consent = page.locator(selector).first
+                    if consent and consent.is_visible(timeout=3000):
+                        consent.click()
+                        print("Clicked cookie consent button on Leroy Merlin")
+                        page.wait_for_timeout(1000)
+                        break
+                except Exception as e:
+                    print(f"Failed with selector {selector}: {e}")
+        except Exception as e:
+            print(f"Error handling Leroy Merlin cookie consent: {e}")
+    
+    elif supplier.supplier == "ManoMano":
+        try:
+            # Handle ManoMano's cookie consent
+            for selector in [
+                "button[data-testid='cookie-banner-accept-button']",
+                "#didomi-notice-agree-button",
+                'button:has-text("Accepter")',
+                'button:has-text("Accept all")'
+            ]:
+                try:
+                    consent = page.locator(selector).first
+                    if consent and consent.is_visible(timeout=3000):
+                        consent.click()
+                        print("Clicked cookie consent button on ManoMano")
+                        page.wait_for_timeout(1000)
+                        break
+                except:
+                    pass
+        except Exception as e:
+            print(f"Cookie handling error for ManoMano (non-critical): {e}")
+    
+    elif supplier.supplier == "Castorama":
+        try:
+            # Castorama cookie consent
+            for selector in [
+                "#onetrust-accept-btn-handler",
+                'button:has-text("Accepter")',
+                'button:has-text("Accept all")'
+            ]:
+                try:
+                    consent = page.locator(selector).first
+                    if consent and consent.is_visible(timeout=3000):
+                        consent.click()
+                        print("Clicked cookie consent button on Castorama")
+                        page.wait_for_timeout(1000)
+                        break
+                except:
+                    pass
+        except Exception as e:
+            print(f"Cookie handling error for Castorama (non-critical): {e}")
+    
     items: List[Dict[str, Any]] = []
-    seen_keys = set()
+    seen_keys = set()  # To avoid duplicates
     pages_seen = 0
-
-    def collect_current_page():
-        cards = page.locator(cat.card)
-        cnt = cards.count()
-        print(f"[DEBUG] Found {cnt} cards for {supplier.supplier}/{cat.name}")  # Debug info
+    
+    # Helper function to extract products from current page
+    def collect_current_page() -> int:
+        cards = page.locator(cat.card)  # Use cat.card directly
+        card_count = cards.count()
+        print(f"[DEBUG] Found {card_count} cards for {supplier.supplier}/{cat.name}")
+        
         collected = 0
-        for i in range(cnt):
-            card = cards.nth(i)
-            item = extract_from_card(card, cat.name, supplier.supplier, supplier.base_url)
-            key = (item["supplier"], item["url"], item["name"], item.get("unit") or "")
-            if item["name"] and item["url"] and key not in seen_keys:
-                items.append(item)
-                seen_keys.add(key)
-                collected += 1
+        for i in range(card_count):
+            try:
+                card = cards.nth(i)
+                
+                # Take occasional screenshots for debugging
+                if os.environ.get("SCRAPER_SCREENSHOTS") == "1" and i % 10 == 0:
+                    try:
+                        card_path = DATA_DIR / f"{supplier.supplier}_card_{i}_{int(time.time())}.png"
+                        card.screenshot(path=str(card_path))
+                    except Exception:
+                        pass
+                
+                item = extract_from_card(card, cat.name, supplier.supplier, supplier.base_url)
+                
+                # Only add valid, non-duplicate items
+                if item and item["name"] and item["url"] != supplier.base_url:
+                    key = (item["supplier"], item["url"], item["name"], item.get("unit") or "")
+                    if key not in seen_keys:
+                        items.append(item)
+                        seen_keys.add(key)
+                        collected += 1
+            except Exception as e:
+                print(f"Error processing card {i}: {e}")
+        
         return collected
-
-    collect_current_page()
-
-    if cat.paging_mode == "pagination":
-        while len(items) < target_min and pages_seen < cat.max_pages:
-            pages_seen += 1
-            if not do_pagination(page, cat.next_button):
+    
+    # Different handling based on pagination mode
+    if cat.paging_mode == "infinite_scroll":  
+        for scroll_step in range(cat.scroll_steps): 
+            # Scroll to bottom to trigger lazy loading
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(cat.scroll_wait_ms)  
+            
+            # Collect items from current view
+            new_items = collect_current_page()
+            print(f"Scroll {scroll_step+1}: Collected {new_items} new items")
+            
+            # Stop if we have enough items or no new items were found
+            if len(items) >= target_min:
                 break
-            page.wait_for_timeout(1000)  # wait for next page load
-            collect_current_page()
-
-    elif cat.paging_mode == "load_more":
-        while len(items) < target_min and pages_seen < cat.max_pages:
-            pages_seen += 1
-            if not do_load_more(page, cat.load_more_button):
+                
+            # If no new items after several scrolls, stop
+            if new_items == 0 and scroll_step >= 2:
+                print("No new items found after multiple scrolls, stopping")
                 break
-            page.wait_for_timeout(1000)
-            collect_current_page()
-
-    elif cat.paging_mode == "infinite_scroll":
-        do_infinite_scroll(page, max(8, cat.scroll_steps), max(900, cat.scroll_wait_ms))  # more scrolls & wait
-        page.wait_for_timeout(1500)  # wait for all products to render
-        collect_current_page()
-
+    
+    else:  # Pagination mode
+        while True:
+            pages_seen += 1
+            print(f"Processing page {pages_seen} of {cat.max_pages}")  
+            
+            # Collect items from current page
+            new_items = collect_current_page()
+            print(f"Page {pages_seen}: Collected {new_items} items")
+            
+            # Stop conditions
+            if len(items) >= target_min:
+                print(f"Reached target of {target_min} items, stopping pagination")
+                break
+                
+            if pages_seen >= cat.max_pages:  
+                print(f"Reached max pages ({cat.max_pages}), stopping pagination")
+                break
+            
+            # Try to find and click the next page button
+            if cat.next_button:  # Use cat.next_button directly
+                next_button = page.locator(cat.next_button).first
+                if next_button and next_button.is_visible():
+                    try:
+                        # Scroll the button into view
+                        next_button.scroll_into_view_if_needed()
+                        page.wait_for_timeout(500)
+                        
+                        # Click and wait for navigation
+                        next_button.click()
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                        page.wait_for_timeout(1000)  # Extra wait for JS
+                    except Exception as e:
+                        print(f"Error navigating to next page: {e}")
+                        break
+                else:
+                    print("No next page button found, ending pagination")
+                    break
+            else:
+                print("No next_button configured, ending pagination")
+                break
+    
+    print(f"Finished scraping {supplier.supplier}/{cat.name}: collected {len(items)} items")
     return items
 
 def scrape_all(cfg: ScraperConfig, min_items: int) -> List[Dict[str, Any]]:

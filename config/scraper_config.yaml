@@ -14,6 +14,18 @@ suppliers:
           next_button: "a[rel='next']"
           max_pages: 15
 
+  - supplier: "Leroy Merlin"
+    base_url: "https://www.leroymerlin.fr"
+    categories:
+      - name: "All Products"
+        url: "https://www.leroymerlin.fr"
+        selectors:
+          card: "li.product-thumbnail"
+        paging:
+          mode: "pagination"
+          next_button: ".a-pagination__link[rel='next']"
+          max_pages: 10
+
   - supplier: "ManoMano"
     base_url: "https://www.manomano.fr"
     categories:

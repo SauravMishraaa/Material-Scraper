@@ -49,6 +49,8 @@ iv.  Field Parsing:
          ↓
 5. **Save to JSON / CSV**
 
+---
+
 ## 🚀 Quick Start
 **1. Create virtual environment and install dependencies**
 
@@ -78,6 +80,8 @@ python scraper.py --config config/scraper_config.yaml
 pytest -q
 ```
 
+---
+
 ## 📋 Output Format:
 - Each item in materials.json contains:
 {
@@ -93,6 +97,8 @@ pytest -q
   "timestamp": 1690000000
 }
 
+---
+
 ## 📌 Assumptions & Edge Cases Handled
 - Supplier-specific selectors via config
 - Automatic handling of pagination, load-more, and infinite scroll
@@ -101,17 +107,23 @@ pytest -q
 - Graceful skip of incomplete products with debug logging
 - Configurable delays to avoid anti-bot detection
 
+---
+
 ## 📈 Scalability Roadmap
 - Static selector config → Automatic selector discovery
 - Static JSON → Database + API export
 - Headless browser scraping → Hybrid requests + JS rendering
 - Category URLs → Auto-category detection from site sitemap
 
+---
+
 ## How to Evolve
 - Integrate supplier APIs (when available) for faster, cleaner data
 - Add NLP product normalization for brand & unit consistency
 - Push data to analytics dashboards or BI tools
 - Enable multi-threaded scraping for faster runs (with care for rate limits)
+
+---
 
 ## 📌 One Real-World Trust Feature
 Selector fallback & debug logging ensures minimal data loss 
