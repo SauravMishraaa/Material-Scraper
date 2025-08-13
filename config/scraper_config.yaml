@@ -6,7 +6,7 @@ suppliers:
     base_url: "https://www.castorama.fr"
     categories:
       - name: "All Products"
-        url: "https://www.castorama.fr"  # your validated link
+        url: "https://www.castorama.fr"  
         selectors:
           card: "[data-test-id='product-tile']"
         paging:
@@ -20,8 +20,8 @@ suppliers:
       - name: "All Products"
         url: "https://www.manomano.fr/recherche/produits"
         selectors:
-          card: "article[data-testid='product-card']"
+          card: "a[data-testid='productCardListing']"
         paging:
           mode: "infinite_scroll"
-          scroll_steps: 30
+          scroll_steps: 1
           scroll_wait_ms: 400
