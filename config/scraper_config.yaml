@@ -6,7 +6,7 @@ suppliers:
     base_url: "https://www.castorama.fr"
     categories:
       - name: "All Products"
-        url: "https://www.castorama.fr/search?term=atomia&promo=true"  # your validated link
+        url: "https://www.castorama.fr"  # your validated link
         selectors:
           card: "[data-test-id='product-tile']"
         paging:
