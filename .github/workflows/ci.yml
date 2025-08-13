@@ -3,7 +3,7 @@ name: CI - Material Scraper
 on:
   push:
     branches: [ "main" ]
-  pull_requests:
+  pull_request:
     branches: [ "main" ]
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-      
+
       - name: Run unit tests
         run: |
           export PYTHONPATH=.
