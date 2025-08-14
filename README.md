@@ -106,6 +106,8 @@ pytest -q
 - Deduplication by (supplier, product_url, name, unit)
 - Graceful skip of incomplete products with debug logging
 - Configurable delays to avoid anti-bot detection
+- Timestamped data for versioning
+- Added Cronjob which can auto-sync monthly
 
 ---
 
