@@ -1,0 +1,1 @@
+0 2 1 * * /usr/bin/python3 scraper.py
