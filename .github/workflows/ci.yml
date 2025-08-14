@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  schedule:
+    - cron: '0 2 1 * *'
 
 jobs:
   build:
@@ -29,3 +31,27 @@ jobs:
         run: |
           export PYTHONPATH=.
           pytest --maxfail=1 --disable-warnings -q
+          
+  run-scraper:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    needs: build
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Run scraper
+        run: |
+          export PYTHONPATH=.
+          python scraper.py --min-items 100 --write-versioned
