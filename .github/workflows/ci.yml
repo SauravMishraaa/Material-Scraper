@@ -54,4 +54,4 @@ jobs:
       - name: Run scraper
         run: |
           export PYTHONPATH=.
-          python scraper.py --min-items 100 --write-versioned
+          python scraper.py --min-items 100
